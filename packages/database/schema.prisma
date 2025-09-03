@@ -1,0 +1,1423 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../backend/src/generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Management
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  firstName    String    @map("first_name")
+  lastName     String    @map("last_name")
+  role         UserRole
+  department   String?
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  lastLogin    DateTime? @map("last_login")
+
+  // Relations
+  projectsCreated     Project[]         @relation("ProjectCreator")
+  projectsUpdated     Project[]         @relation("ProjectUpdater")
+  processFlowsCreated ProcessFlow[]     @relation("ProcessFlowCreator")
+  processFlowsUpdated ProcessFlow[]     @relation("ProcessFlowUpdater")
+  approvals           ProcessApproval[]
+  auditLogs           AuditLog[]
+  comments            Comment[]
+  attachments         Attachment[]
+  
+  // FMEA Relations
+  fmeasCreated        Fmea[]            @relation("FmeaCreator")
+  fmeasUpdated        Fmea[]            @relation("FmeaUpdater")
+  fmeaTeamLeader      Fmea[]            @relation("FmeaTeamLeader")
+  fmeaTeamMembers     FmeaTeamMember[]
+  actionItemsAssigned FmeaActionItem[]  @relation("ActionItemAssignee")
+  actionItemsVerified FmeaActionItem[]  @relation("ActionItemVerifier")
+  rpnCalculations     RpnCalculation[]
+  
+  // Control Plan Relations
+  controlPlansCreated ControlPlan[]     @relation("ControlPlanCreator")
+  controlPlansUpdated ControlPlan[]     @relation("ControlPlanUpdater")
+  controlPlanTeamMembers ControlPlanTeamMember[]
+  gageStudiesConducted GageStudy[]      @relation("GageStudyConductor")
+  gageStudiesApproved GageStudy[]       @relation("GageStudyApprover")
+  qmsChanges          QmsChangeLog[]
+  
+  // Change Management Relations
+  versionsCreated     ProjectVersion[]  @relation("VersionCreator")
+  changesApproved     ChangeEvent[]     @relation("ChangeApprover")
+  changesTriggered    ChangeEvent[]     @relation("ChangeTriggerer")
+  impactAnalyses      ChangeImpactAnalysis[] @relation("ImpactAnalyzer")
+  notifications       ChangeNotification[] @relation("NotificationRecipient")
+  approvals           ChangeApproval[]  @relation("ApprovalUser")
+  activityLogs        UserActivityLog[]
+  reportsGenerated    ComplianceReport[] @relation("ReportGenerator")
+  reportsReviewed     ComplianceReport[] @relation("ReportReviewer")
+  reportsApproved     ComplianceReport[] @relation("ReportApprover")
+  dashboardConfigs    DashboardConfiguration[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  QUALITY_MANAGER
+  PROCESS_ENGINEER
+  OPERATOR
+  VIEWER
+
+  @@map("user_role")
+}
+
+// Projects (containers for process flows)
+model Project {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  projectCode String    @unique @map("project_code")
+  customer    String?
+  productLine String?   @map("product_line")
+  status      Status
+  priority    Priority
+  startDate   DateTime? @map("start_date") @db.Date
+  targetDate  DateTime? @map("target_date") @db.Date
+  createdById String    @map("created_by")
+  updatedById String    @map("updated_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  createdBy      User           @relation("ProjectCreator", fields: [createdById], references: [id])
+  updatedBy      User           @relation("ProjectUpdater", fields: [updatedById], references: [id])
+  processFlows   ProcessFlow[]
+  fmeas          Fmea[]
+  controlPlans   ControlPlan[]
+  
+  // Change Management Relations
+  versions            ProjectVersion[]
+  changeEvents        ChangeEvent[]
+  impactAnalyses      ChangeImpactAnalysis[]
+  notifications       ChangeNotification[]
+  riskAnalytics       RiskAnalytics[]
+  approvalWorkflows   ChangeApprovalWorkflow[]
+  activityLogs        UserActivityLog[]
+  complianceReports   ComplianceReport[]
+  dashboardConfigs    DashboardConfiguration[]
+
+  @@map("projects")
+}
+
+// Parts (automotive components)
+model Part {
+  id           String   @id @default(uuid())
+  partNumber   String   @unique @map("part_number")
+  name         String
+  description  String?
+  customer     String?
+  revision     String   @default("A")
+  drawingNumber String? @map("drawing_number")
+  materialSpec String? @map("material_spec")
+  weightGrams  Decimal? @map("weight_grams") @db.Decimal(10, 2)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  processFlows ProcessFlow[]
+  fmeas        Fmea[]
+  controlPlans ControlPlan[]
+  fmeas        Fmea[]
+
+  @@map("parts")
+}
+
+// Swimlanes (organizational containers)
+model Swimlane {
+  id              String   @id @default(uuid())
+  name            String
+  description     String?
+  department      String?
+  responsibleRole String?  @map("responsible_role")
+  color           String   @default("#E3F2FD")
+  positionOrder   Int      @default(0) @map("position_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  processSteps ProcessStep[]
+
+  @@map("swimlanes")
+}
+
+// Process flows
+model ProcessFlow {
+  id                 String   @id @default(uuid())
+  projectId          String?  @map("project_id")
+  partId             String?  @map("part_id")
+  name               String
+  description        String?
+  version            String   @default("1.0")
+  status             Status
+  priority           Priority
+  processType        String?  @map("process_type")
+  estimatedCycleTime Int?     @map("estimated_cycle_time")
+  taktTime           Int?     @map("takt_time")
+  canvasSettings     Json?    @map("canvas_settings")
+  createdById        String   @map("created_by")
+  updatedById        String   @map("updated_by")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  project         Project?          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  part            Part?             @relation(fields: [partId], references: [id])
+  createdBy       User              @relation("ProcessFlowCreator", fields: [createdById], references: [id])
+  updatedBy       User              @relation("ProcessFlowUpdater", fields: [updatedById], references: [id])
+  processSteps    ProcessStep[]
+  stepConnections StepConnection[]
+  approvals       ProcessApproval[]
+  fmeas           Fmea[]
+  controlPlans    ControlPlan[]
+
+  @@map("process_flows")
+}
+
+// Process steps
+model ProcessStep {
+  id                       String          @id @default(uuid())
+  processFlowId            String          @map("process_flow_id")
+  swimlaneId               String?         @map("swimlane_id")
+  stepNumber               Int             @map("step_number")
+  name                     String
+  description              String?
+  stepType                 ProcessStepType @map("step_type")
+  operationTime            Int?            @map("operation_time")
+  setupTime                Int?            @map("setup_time")
+  waitTime                 Int?            @map("wait_time")
+  transportTime            Int?            @map("transport_time")
+  positionX                Decimal         @default(0) @map("position_x") @db.Decimal(10, 2)
+  positionY                Decimal         @default(0) @map("position_y") @db.Decimal(10, 2)
+  width                    Decimal?        @default(200) @db.Decimal(8, 2)
+  height                   Decimal?        @default(100) @db.Decimal(8, 2)
+  backgroundColor          String?         @default("#FFFFFF") @map("background_color")
+  borderColor              String?         @default("#000000") @map("border_color")
+  qualityRequirements      String?         @map("quality_requirements")
+  safetyRequirements       String?         @map("safety_requirements")
+  environmentalRequirements String?        @map("environmental_requirements")
+  createdAt                DateTime        @default(now()) @map("created_at")
+  updatedAt                DateTime        @updatedAt @map("updated_at")
+
+  // Relations
+  processFlow           ProcessFlow             @relation(fields: [processFlowId], references: [id], onDelete: Cascade)
+  swimlane              Swimlane?               @relation(fields: [swimlaneId], references: [id])
+  sourceConnections     StepConnection[]        @relation("SourceStep")
+  targetConnections     StepConnection[]        @relation("TargetStep")
+  resources             ProcessStepResource[]
+  controlPoints         ControlPoint[]
+  inputs                ProcessInput[]
+  outputs               ProcessOutput[]
+  failureModeLinks      ProcessStepFailureMode[]
+  primaryFailureModes   FailureMode[]           @relation("PrimaryProcessStep")
+  failureControls       FailureControl[]
+  controlPlanItems      ControlPlanItem[]
+
+  @@unique([processFlowId, stepNumber], map: "unique_step_per_flow")
+  @@map("process_steps")
+}
+
+enum ProcessStepType {
+  OPERATION
+  INSPECTION
+  TRANSPORT
+  DELAY
+  STORAGE
+  DECISION
+  START
+  END
+
+  @@map("process_step_type")
+}
+
+// Step connections (edges)
+model StepConnection {
+  id             String   @id @default(uuid())
+  processFlowId  String   @map("process_flow_id")
+  sourceStepId   String   @map("source_step_id")
+  targetStepId   String   @map("target_step_id")
+  connectionType String   @default("default") @map("connection_type")
+  conditionText  String?  @map("condition_text")
+  label          String?
+  strokeColor    String   @default("#000000") @map("stroke_color")
+  strokeWidth    Decimal  @default(2) @map("stroke_width") @db.Decimal(4, 1)
+  strokeStyle    String   @default("solid") @map("stroke_style")
+  animated       Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  // Relations
+  processFlow ProcessFlow @relation(fields: [processFlowId], references: [id], onDelete: Cascade)
+  sourceStep  ProcessStep @relation("SourceStep", fields: [sourceStepId], references: [id], onDelete: Cascade)
+  targetStep  ProcessStep @relation("TargetStep", fields: [targetStepId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceStepId, targetStepId], map: "unique_connection")
+  @@map("step_connections")
+}
+
+// Resources
+model Resource {
+  id           String       @id @default(uuid())
+  name         String
+  resourceType ResourceType @map("resource_type")
+  description  String?
+  specification String?
+  manufacturer String?
+  model        String?
+  serialNumber String?      @map("serial_number")
+  location     String?
+  hourlyRate   Decimal?     @map("hourly_rate") @db.Decimal(10, 2)
+  isActive     Boolean      @default(true) @map("is_active")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  processSteps ProcessStepResource[]
+
+  @@map("resources")
+}
+
+enum ResourceType {
+  MACHINE
+  TOOL
+  OPERATOR
+  MATERIAL
+  EQUIPMENT
+
+  @@map("resource_type")
+}
+
+// Process step resources (many-to-many)
+model ProcessStepResource {
+  id                    String      @id @default(uuid())
+  processStepId         String      @map("process_step_id")
+  resourceId            String      @map("resource_id")
+  quantityRequired      Int         @default(1) @map("quantity_required")
+  utilizationPercentage Decimal     @default(100.00) @map("utilization_percentage") @db.Decimal(5, 2)
+  setupRequired         Boolean     @default(false) @map("setup_required")
+  notes                 String?
+  createdAt             DateTime    @default(now()) @map("created_at")
+
+  // Relations
+  processStep ProcessStep @relation(fields: [processStepId], references: [id], onDelete: Cascade)
+  resource    Resource    @relation(fields: [resourceId], references: [id])
+
+  @@unique([processStepId, resourceId], map: "unique_step_resource")
+  @@map("process_step_resources")
+}
+
+// Control points
+model ControlPoint {
+  id                  String           @id @default(uuid())
+  processStepId       String           @map("process_step_id")
+  name                String
+  controlType         ControlPointType @map("control_type")
+  specification       String
+  measurementMethod   String?          @map("measurement_method")
+  inspectionFrequency String?          @map("inspection_frequency")
+  sampleSize          Int?             @map("sample_size")
+  upperSpecLimit      Decimal?         @map("upper_spec_limit") @db.Decimal(15, 6)
+  lowerSpecLimit      Decimal?         @map("lower_spec_limit") @db.Decimal(15, 6)
+  targetValue         Decimal?         @map("target_value") @db.Decimal(15, 6)
+  unit                String?
+  responsibleRole     String?          @map("responsible_role")
+  reactionPlan        String?          @map("reaction_plan")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  // Relations
+  processStep ProcessStep @relation(fields: [processStepId], references: [id], onDelete: Cascade)
+
+  @@map("control_points")
+}
+
+enum ControlPointType {
+  CRITICAL
+  MAJOR
+  MINOR
+  INFORMATIONAL
+
+  @@map("control_point_type")
+}
+
+// Process inputs
+model ProcessInput {
+  id               String      @id @default(uuid())
+  processStepId    String      @map("process_step_id")
+  name             String
+  description      String?
+  specification    String?
+  sourceLocation   String?     @map("source_location")
+  quantityRequired Decimal?    @map("quantity_required") @db.Decimal(15, 6)
+  unit             String?
+  isCritical       Boolean     @default(false) @map("is_critical")
+  supplier         String?
+  partNumber       String?     @map("part_number")
+  createdAt        DateTime    @default(now()) @map("created_at")
+
+  // Relations
+  processStep ProcessStep @relation(fields: [processStepId], references: [id], onDelete: Cascade)
+
+  @@map("process_inputs")
+}
+
+// Process outputs
+model ProcessOutput {
+  id                    String      @id @default(uuid())
+  processStepId         String      @map("process_step_id")
+  name                  String
+  description           String?
+  specification         String?
+  destinationLocation   String?     @map("destination_location")
+  quantityProduced      Decimal?    @map("quantity_produced") @db.Decimal(15, 6)
+  unit                  String?
+  qualityCharacteristic String?     @map("quality_characteristic")
+  acceptanceCriteria    String?     @map("acceptance_criteria")
+  createdAt             DateTime    @default(now()) @map("created_at")
+
+  // Relations
+  processStep ProcessStep @relation(fields: [processStepId], references: [id], onDelete: Cascade)
+
+  @@map("process_outputs")
+}
+
+// Process approvals
+model ProcessApproval {
+  id               String          @id @default(uuid())
+  processFlowId    String          @map("process_flow_id")
+  approverRole     String          @map("approver_role")
+  approverUserId   String?         @map("approver_user_id")
+  approvalStatus   ApprovalStatus  @default(PENDING) @map("approval_status")
+  approvedAt       DateTime?       @map("approved_at")
+  comments         String?
+  approvalLevel    Int             @default(1) @map("approval_level")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  // Relations
+  processFlow   ProcessFlow @relation(fields: [processFlowId], references: [id], onDelete: Cascade)
+  approverUser  User?       @relation(fields: [approverUserId], references: [id])
+
+  @@unique([processFlowId, approverRole, approvalLevel], map: "unique_approval_per_role")
+  @@map("process_approvals")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+
+  @@map("approval_status")
+}
+
+// Audit logs
+model AuditLog {
+  id            String   @id @default(uuid())
+  entityType    String   @map("entity_type")
+  entityId      String   @map("entity_id")
+  action        String
+  oldValues     Json?    @map("old_values")
+  newValues     Json?    @map("new_values")
+  changedFields String[] @map("changed_fields")
+  userId        String   @map("user_id")
+  ipAddress     String?  @map("ip_address")
+  userAgent     String?  @map("user_agent")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// Comments
+model Comment {
+  id              String    @id @default(uuid())
+  entityType      String    @map("entity_type")
+  entityId        String    @map("entity_id")
+  parentCommentId String?   @map("parent_comment_id")
+  userId          String    @map("user_id")
+  content         String
+  isResolved      Boolean   @default(false) @map("is_resolved")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id])
+  parentComment Comment?  @relation("CommentReplies", fields: [parentCommentId], references: [id])
+  replies       Comment[] @relation("CommentReplies")
+
+  @@map("comments")
+}
+
+// Attachments
+model Attachment {
+  id               String   @id @default(uuid())
+  entityType       String   @map("entity_type")
+  entityId         String   @map("entity_id")
+  filename         String
+  originalFilename String   @map("original_filename")
+  filePath         String   @map("file_path")
+  fileSize         BigInt   @map("file_size")
+  mimeType         String   @map("mime_type")
+  uploadedById     String   @map("uploaded_by")
+  uploadedAt       DateTime @default(now()) @map("uploaded_at")
+
+  // Relations
+  uploadedBy User @relation(fields: [uploadedById], references: [id])
+
+  @@map("attachments")
+}
+
+// Common enums
+enum Status {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+
+  @@map("status")
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+
+  @@map("priority")
+}
+
+// =====================================================
+// FMEA (Failure Mode and Effects Analysis) MODELS
+// =====================================================
+
+// FMEA Document
+model Fmea {
+  id                   String   @id @default(uuid())
+  projectId            String?  @map("project_id")
+  processFlowId        String?  @map("process_flow_id")
+  partId               String?  @map("part_id")
+  fmeaNumber           String   @unique @map("fmea_number")
+  title                String
+  description          String?
+  fmeaType             FmeaType @default(PROCESS) @map("fmea_type")
+  revision             String   @default("1.0")
+  status               Status   @default(DRAFT)
+  severityThreshold    Int      @default(7) @map("severity_threshold")
+  occurrenceThreshold  Int      @default(4) @map("occurrence_threshold")
+  detectionThreshold   Int      @default(7) @map("detection_threshold")
+  rpnThreshold         Int      @default(100) @map("rpn_threshold")
+  analysisDate         DateTime @default(now()) @map("analysis_date") @db.Date
+  dueDate              DateTime? @map("due_date") @db.Date
+  teamLeaderId         String?  @map("team_leader_id")
+  createdById          String   @map("created_by_id")
+  updatedById          String   @map("updated_by_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  project      Project?         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  processFlow  ProcessFlow?     @relation(fields: [processFlowId], references: [id], onDelete: Cascade)
+  part         Part?            @relation(fields: [partId], references: [id])
+  teamLeader   User?            @relation("FmeaTeamLeader", fields: [teamLeaderId], references: [id])
+  createdBy    User             @relation("FmeaCreator", fields: [createdById], references: [id])
+  updatedBy    User             @relation("FmeaUpdater", fields: [updatedById], references: [id])
+  failureModes FailureMode[]
+  teamMembers  FmeaTeamMember[]
+  controlPlans ControlPlan[]
+  controlPlanLinks ControlPlanFmeaLink[]
+
+  @@map("fmeas")
+}
+
+enum FmeaType {
+  PROCESS
+  DESIGN
+  SYSTEM
+
+  @@map("fmea_type")
+}
+
+// Failure Modes
+model FailureMode {
+  id                     String    @id @default(uuid())
+  fmeaId                 String    @map("fmea_id")
+  itemFunction           String    @map("item_function")
+  failureMode            String    @map("failure_mode")
+  sequenceNumber         Int       @default(1) @map("sequence_number")
+  severityRating         Int       @default(1) @map("severity_rating")
+  severityJustification  String?   @map("severity_justification")
+  primaryProcessStepId   String?   @map("primary_process_step_id")
+  failureClassification String    @default("PROCESS") @map("failure_classification")
+  specialCharacteristic Boolean   @default(false) @map("special_characteristic")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  fmea                 Fmea                     @relation(fields: [fmeaId], references: [id], onDelete: Cascade)
+  primaryProcessStep   ProcessStep?             @relation("PrimaryProcessStep", fields: [primaryProcessStepId], references: [id])
+  effects              FailureEffect[]
+  causes               FailureCause[]
+  actionItems          FmeaActionItem[]
+  processStepLinks     ProcessStepFailureMode[]
+  rpnCalculations      RpnCalculation[]
+  controlPlanLinks     ControlPlanFmeaLink[]
+
+  @@map("failure_modes")
+}
+
+// Failure Effects
+model FailureEffect {
+  id               String    @id @default(uuid())
+  failureModeId    String    @map("failure_mode_id")
+  effectDescription String    @map("effect_description")
+  effectType       String    @default("LOCAL") @map("effect_type")
+  customerImpact   String?   @map("customer_impact")
+  safetyImpact     Boolean   @default(false) @map("safety_impact")
+  regulatoryImpact Boolean   @default(false) @map("regulatory_impact")
+  warrantyImpact   Boolean   @default(false) @map("warranty_impact")
+  sequenceNumber   Int       @default(1) @map("sequence_number")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  failureMode FailureMode @relation(fields: [failureModeId], references: [id], onDelete: Cascade)
+
+  @@map("failure_effects")
+}
+
+// Failure Causes
+model FailureCause {
+  id                     String           @id @default(uuid())
+  failureModeId          String           @map("failure_mode_id")
+  causeDescription       String           @map("cause_description")
+  causeCategory          String           @default("OTHER") @map("cause_category")
+  occurrenceRating       Int              @default(1) @map("occurrence_rating")
+  occurrenceJustification String?          @map("occurrence_justification")
+  isRootCause            Boolean          @default(false) @map("is_root_cause")
+  causeMechanism         String?          @map("cause_mechanism")
+  sequenceNumber         Int              @default(1) @map("sequence_number")
+  createdAt              DateTime         @default(now()) @map("created_at")
+  updatedAt              DateTime         @updatedAt @map("updated_at")
+
+  // Relations
+  failureMode      FailureMode         @relation(fields: [failureModeId], references: [id], onDelete: Cascade)
+  controls         FailureControl[]
+  controlPlanLinks ControlPlanFmeaLink[]
+
+  @@map("failure_causes")
+}
+
+// Failure Controls (Prevention and Detection)
+model FailureControl {
+  id                     String       @id @default(uuid())
+  failureCauseId         String       @map("failure_cause_id")
+  controlDescription     String       @map("control_description")
+  controlType            ControlType  @map("control_type")
+  controlMethod          String?      @map("control_method")
+  detectionRating        Int          @default(1) @map("detection_rating")
+  detectionJustification String?      @map("detection_justification")
+  validationMethod       String?      @map("validation_method")
+  responsibility         String?
+  frequency              String?
+  sampleSize             Int?         @map("sample_size")
+  processStepId          String?      @map("process_step_id")
+  controlPointId         String?      @map("control_point_id")
+  sequenceNumber         Int          @default(1) @map("sequence_number")
+  createdAt              DateTime     @default(now()) @map("created_at")
+  updatedAt              DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  failureCause     FailureCause        @relation(fields: [failureCauseId], references: [id], onDelete: Cascade)
+  processStep      ProcessStep?        @relation(fields: [processStepId], references: [id])
+  controlPoint     ControlPoint?       @relation(fields: [controlPointId], references: [id])
+  controlPlanLinks ControlPlanFmeaLink[]
+
+  @@map("failure_controls")
+}
+
+enum ControlType {
+  PREVENTION
+  DETECTION
+
+  @@map("control_type")
+}
+
+// FMEA Action Items
+model FmeaActionItem {
+  id                 String            @id @default(uuid())
+  failureModeId      String            @map("failure_mode_id")
+  actionDescription  String            @map("action_description")
+  actionType         ActionType        @default(CORRECTIVE) @map("action_type")
+  priority           ActionPriority    @default(MEDIUM)
+  assignedToId       String?           @map("assigned_to_id")
+  assignedDepartment String?           @map("assigned_department")
+  targetDate         DateTime?         @map("target_date") @db.Date
+  completedDate      DateTime?         @map("completed_date") @db.Date
+  status             ActionItemStatus  @default(OPEN)
+  estimatedCost      Decimal?          @map("estimated_cost") @db.Decimal(12, 2)
+  actualCost         Decimal?          @map("actual_cost") @db.Decimal(12, 2)
+  estimatedHours     Decimal?          @map("estimated_hours") @db.Decimal(8, 2)
+  actualHours        Decimal?          @map("actual_hours") @db.Decimal(8, 2)
+  completionNotes    String?           @map("completion_notes")
+  verificationMethod String?           @map("verification_method")
+  verificationDate   DateTime?         @map("verification_date") @db.Date
+  verifiedById       String?           @map("verified_by_id")
+  targetSeverity     Int?              @map("target_severity")
+  targetOccurrence   Int?              @map("target_occurrence")
+  targetDetection    Int?              @map("target_detection")
+  targetRpn          Int?              @map("target_rpn")
+  actualSeverity     Int?              @map("actual_severity")
+  actualOccurrence   Int?              @map("actual_occurrence")
+  actualDetection    Int?              @map("actual_detection")
+  actualRpn          Int?              @map("actual_rpn")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+
+  // Relations
+  failureMode FailureMode @relation(fields: [failureModeId], references: [id], onDelete: Cascade)
+  assignedTo  User?       @relation("ActionItemAssignee", fields: [assignedToId], references: [id])
+  verifiedBy  User?       @relation("ActionItemVerifier", fields: [verifiedById], references: [id])
+
+  @@map("fmea_action_items")
+}
+
+enum ActionType {
+  CORRECTIVE
+  PREVENTIVE
+  IMPROVEMENT
+
+  @@map("action_type")
+}
+
+enum ActionPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+
+  @@map("action_priority")
+}
+
+enum ActionItemStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  ON_HOLD
+
+  @@map("action_item_status")
+}
+
+// Process Step to Failure Mode Linking (Many-to-Many)
+model ProcessStepFailureMode {
+  id                String              @id @default(uuid())
+  processStepId     String              @map("process_step_id")
+  failureModeId     String              @map("failure_mode_id")
+  relationshipType  String              @default("AFFECTS") @map("relationship_type")
+  impactLevel       String              @default("MEDIUM") @map("impact_level")
+  notes             String?
+  createdAt         DateTime            @default(now()) @map("created_at")
+
+  // Relations
+  processStep ProcessStep   @relation(fields: [processStepId], references: [id], onDelete: Cascade)
+  failureMode FailureMode   @relation(fields: [failureModeId], references: [id], onDelete: Cascade)
+
+  @@unique([processStepId, failureModeId, relationshipType])
+  @@map("process_step_failure_modes")
+}
+
+// FMEA Team Members
+model FmeaTeamMember {
+  id            String   @id @default(uuid())
+  fmeaId        String   @map("fmea_id")
+  userId        String   @map("user_id")
+  role          String
+  expertiseArea String?  @map("expertise_area")
+  responsibilities String?
+  addedAt       DateTime @default(now()) @map("added_at")
+
+  // Relations
+  fmea Fmea @relation(fields: [fmeaId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([fmeaId, userId])
+  @@map("fmea_team_members")
+}
+
+// RPN Calculations History (Audit Trail)
+model RpnCalculation {
+  id              String   @id @default(uuid())
+  failureModeId   String   @map("failure_mode_id")
+  severity        Int
+  occurrence      Int
+  detection       Int
+  rpn             Int
+  calculationDate DateTime @default(now()) @map("calculation_date")
+  calculatedById  String   @map("calculated_by_id")
+  notes           String?
+
+  // Relations
+  failureMode  FailureMode @relation(fields: [failureModeId], references: [id], onDelete: Cascade)
+  calculatedBy User        @relation(fields: [calculatedById], references: [id])
+
+  @@map("rpn_calculations")
+}
+
+// Automotive Rating Scale Reference Tables
+model SeverityRatingScale {
+  rating             Int    @id
+  description        String @db.VarChar(100)
+  criteria           String
+  examples           String?
+  automotiveStandard String @default("AIAG-VDA") @map("automotive_standard") @db.VarChar(50)
+
+  @@map("severity_rating_scale")
+}
+
+model OccurrenceRatingScale {
+  rating             Int    @id
+  description        String @db.VarChar(100)
+  probabilityCriteria String @map("probability_criteria")
+  failureRates       String @map("failure_rates")
+  automotiveStandard String @default("AIAG-VDA") @map("automotive_standard") @db.VarChar(50)
+
+  @@map("occurrence_rating_scale")
+}
+
+model DetectionRatingScale {
+  rating             Int    @id
+  description        String @db.VarChar(100)
+  detectionCriteria  String @map("detection_criteria")
+  controlTypes       String @map("control_types")
+  automotiveStandard String @default("AIAG-VDA") @map("automotive_standard") @db.VarChar(50)
+
+  @@map("detection_rating_scale")
+}
+
+// =====================================================
+// CONTROL PLAN MODELS
+// =====================================================
+
+// Control Plans
+model ControlPlan {
+  id                  String     @id @default(uuid())
+  projectId           String?    @map("project_id")
+  processFlowId       String?    @map("process_flow_id")
+  fmeaId              String?    @map("fmea_id")
+  partId              String?    @map("part_id")
+  controlPlanNumber   String     @unique @map("control_plan_number")
+  title               String
+  description         String?
+  revision            String     @default("1.0")
+  status              Status     @default(DRAFT)
+  controlPlanType     ControlPlanType @default(PRODUCTION) @map("control_plan_type")
+  processOwner        String?    @map("process_owner")
+  engineerApproval    String?    @map("engineer_approval")
+  qualityApproval     String?    @map("quality_approval")
+  productionApproval  String?    @map("production_approval")
+  customerApproval    String?    @map("customer_approval")
+  effectiveDate       DateTime?  @map("effective_date") @db.Date
+  supersededDate      DateTime?  @map("superseded_date") @db.Date
+  reviewDate          DateTime?  @map("review_date") @db.Date
+  createdById         String     @map("created_by_id")
+  updatedById         String     @map("updated_by_id")
+  createdAt           DateTime   @default(now()) @map("created_at")
+  updatedAt           DateTime   @updatedAt @map("updated_at")
+
+  // Relations
+  project       Project?        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  processFlow   ProcessFlow?    @relation(fields: [processFlowId], references: [id], onDelete: Cascade)
+  fmea          Fmea?           @relation(fields: [fmeaId], references: [id], onDelete: Cascade)
+  part          Part?           @relation(fields: [partId], references: [id])
+  createdBy     User            @relation("ControlPlanCreator", fields: [createdById], references: [id])
+  updatedBy     User            @relation("ControlPlanUpdater", fields: [updatedById], references: [id])
+  controlPlanItems ControlPlanItem[]
+  teamMembers   ControlPlanTeamMember[]
+  fmeaLinks     ControlPlanFmeaLink[]
+
+  @@map("control_plans")
+}
+
+enum ControlPlanType {
+  PROTOTYPE
+  PRE_PRODUCTION
+  PRODUCTION
+
+  @@map("control_plan_type")
+}
+
+// Control Plan Items
+model ControlPlanItem {
+  id                     String      @id @default(uuid())
+  controlPlanId          String      @map("control_plan_id")
+  sequenceNumber         Int         @default(1) @map("sequence_number")
+  processStepId          String?     @map("process_step_id")
+  operationNumber        String?     @map("operation_number")
+  operationDescription   String      @map("operation_description")
+  machineDeviceFixture   String?     @map("machine_device_fixture")
+  productCharacteristic  String?     @map("product_characteristic")
+  processCharacteristic  String?     @map("process_characteristic")
+  specificationRequirement String?   @map("specification_requirement")
+  controlMethod          String      @map("control_method")
+  measurementTechnique   String?     @map("measurement_technique")
+  sampleSizeFrequency    String      @map("sample_size_frequency")
+  controlType            ControlPlanControlType @default(DETECTION) @map("control_type")
+  controlCategory        ControlPlanControlCategory @default(MEASUREMENT) @map("control_category")
+  responsiblePerson      String?     @map("responsible_person")
+  reactionPlan           String?     @map("reaction_plan")
+  upperSpecLimit         Decimal?    @map("upper_spec_limit") @db.Decimal(15, 6)
+  lowerSpecLimit         Decimal?    @map("lower_spec_limit") @db.Decimal(15, 6)
+  targetValue            Decimal?    @map("target_value") @db.Decimal(15, 6)
+  unit                   String?
+  measurementEquipmentId String?     @map("measurement_equipment_id")
+  frequencyId            String?     @map("frequency_id")
+  notes                  String?
+  isActive               Boolean     @default(true) @map("is_active")
+  createdAt              DateTime    @default(now()) @map("created_at")
+  updatedAt              DateTime    @updatedAt @map("updated_at")
+
+  // Relations
+  controlPlan        ControlPlan           @relation(fields: [controlPlanId], references: [id], onDelete: Cascade)
+  processStep        ProcessStep?          @relation(fields: [processStepId], references: [id])
+  measurementEquipment MeasurementEquipment? @relation(fields: [measurementEquipmentId], references: [id])
+  frequency          MeasurementFrequency? @relation(fields: [frequencyId], references: [id])
+  controlMethods     ControlPlanItemMethod[]
+
+  @@unique([controlPlanId, sequenceNumber])
+  @@map("control_plan_items")
+}
+
+enum ControlPlanControlType {
+  PREVENTION
+  DETECTION
+
+  @@map("control_plan_control_type")
+}
+
+enum ControlPlanControlCategory {
+  MEASUREMENT
+  VISUAL
+  FUNCTIONAL
+  ATTRIBUTE
+
+  @@map("control_plan_control_category")
+}
+
+// Control Methods (Reference Data)
+model ControlMethod {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  description String?
+  category    String?
+  isStandard  Boolean @default(true) @map("is_standard")
+  isActive    Boolean @default(true) @map("is_active")
+
+  // Relations
+  controlPlanItems ControlPlanItemMethod[]
+
+  @@map("control_methods")
+}
+
+// Many-to-many relationship between Control Plan Items and Control Methods
+model ControlPlanItemMethod {
+  id              String  @id @default(uuid())
+  controlPlanItemId String  @map("control_plan_item_id")
+  controlMethodId String  @map("control_method_id")
+  parameters      String?
+  notes           String?
+
+  // Relations
+  controlPlanItem ControlPlanItem @relation(fields: [controlPlanItemId], references: [id], onDelete: Cascade)
+  controlMethod   ControlMethod   @relation(fields: [controlMethodId], references: [id], onDelete: Cascade)
+
+  @@unique([controlPlanItemId, controlMethodId])
+  @@map("control_plan_item_methods")
+}
+
+// Measurement Equipment
+model MeasurementEquipment {
+  id                 String    @id @default(uuid())
+  equipmentId        String    @unique @map("equipment_id")
+  name               String
+  description        String?
+  equipmentType      String    @map("equipment_type")
+  manufacturer       String?
+  model              String?
+  serialNumber       String?   @map("serial_number")
+  accuracy           String?
+  resolution         String?
+  measurementRange   String?   @map("measurement_range")
+  calibrationDue     DateTime? @map("calibration_due") @db.Date
+  calibrationInterval Int?      @map("calibration_interval")
+  location           String?
+  responsiblePerson  String?   @map("responsible_person")
+  isActive           Boolean   @default(true) @map("is_active")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  controlPlanItems  ControlPlanItem[]
+  gageStudies       GageStudy[]
+
+  @@map("measurement_equipment")
+}
+
+// Gage R&R Studies
+model GageStudy {
+  id                    String    @id @default(uuid())
+  measurementEquipmentId String   @map("measurement_equipment_id")
+  studyType             String    @default("GAGE_RR") @map("study_type")
+  studyDate             DateTime  @default(now()) @map("study_date") @db.Date
+  operatorCount         Int       @default(3) @map("operator_count")
+  partCount             Int       @default(10) @map("part_count")
+  trialCount            Int       @default(2) @map("trial_count")
+  totalVariation        Decimal?  @map("total_variation") @db.Decimal(10, 6)
+  repeatability         Decimal?  @db.Decimal(10, 6)
+  reproducibility       Decimal?  @db.Decimal(10, 6)
+  gageRR                Decimal?  @map("gage_rr") @db.Decimal(10, 6)
+  partVariation         Decimal?  @map("part_variation") @db.Decimal(10, 6)
+  studyVariation        Decimal?  @map("study_variation") @db.Decimal(10, 6)
+  ndc                   Int?
+  acceptanceCriteria    String?   @map("acceptance_criteria")
+  studyResults          String?   @map("study_results")
+  recommendations       String?
+  studyStatus           String    @default("PLANNED") @map("study_status")
+  conductedById         String?   @map("conducted_by_id")
+  approvedById          String?   @map("approved_by_id")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  measurementEquipment MeasurementEquipment @relation(fields: [measurementEquipmentId], references: [id], onDelete: Cascade)
+  conductedBy          User?                @relation("GageStudyConductor", fields: [conductedById], references: [id])
+  approvedBy           User?                @relation("GageStudyApprover", fields: [approvedById], references: [id])
+
+  @@map("gage_studies")
+}
+
+// Measurement Frequencies (Reference Data)
+model MeasurementFrequency {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  description String?
+  interval    String?
+  isStandard  Boolean @default(true) @map("is_standard")
+  isActive    Boolean @default(true) @map("is_active")
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  // Relations
+  controlPlanItems ControlPlanItem[]
+
+  @@map("measurement_frequencies")
+}
+
+// Control Plan to FMEA Links
+model ControlPlanFmeaLink {
+  id               String   @id @default(uuid())
+  controlPlanId    String   @map("control_plan_id")
+  fmeaId           String   @map("fmea_id")
+  failureModeId    String?  @map("failure_mode_id")
+  failureCauseId   String?  @map("failure_cause_id")
+  failureControlId String?  @map("failure_control_id")
+  linkType         String   @default("GENERATED_FROM") @map("link_type")
+  notes            String?
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  // Relations
+  controlPlan    ControlPlan    @relation(fields: [controlPlanId], references: [id], onDelete: Cascade)
+  fmea           Fmea           @relation(fields: [fmeaId], references: [id], onDelete: Cascade)
+  failureMode    FailureMode?   @relation(fields: [failureModeId], references: [id], onDelete: Cascade)
+  failureCause   FailureCause?  @relation(fields: [failureCauseId], references: [id], onDelete: Cascade)
+  failureControl FailureControl? @relation(fields: [failureControlId], references: [id], onDelete: Cascade)
+
+  @@unique([controlPlanId, fmeaId, failureModeId, failureCauseId])
+  @@map("control_plan_fmea_links")
+}
+
+// Control Plan Team Members
+model ControlPlanTeamMember {
+  id            String   @id @default(uuid())
+  controlPlanId String   @map("control_plan_id")
+  userId        String   @map("user_id")
+  role          String
+  responsibilities String?
+  addedAt       DateTime @default(now()) @map("added_at")
+
+  // Relations
+  controlPlan ControlPlan @relation(fields: [controlPlanId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([controlPlanId, userId])
+  @@map("control_plan_team_members")
+}
+
+// QMS Change Log (Cross-module change tracking)
+model QmsChangeLog {
+  id            String   @id @default(uuid())
+  entityType    String   @map("entity_type")
+  entityId      String   @map("entity_id")
+  changeType    String   @map("change_type")
+  affectedModules String[] @map("affected_modules")
+  oldValues     Json?    @map("old_values")
+  newValues     Json?    @map("new_values")
+  propagated    Boolean  @default(false)
+  userId        String   @map("user_id")
+  changeDate    DateTime @default(now()) @map("change_date")
+  notes         String?
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("qms_change_log")
+}
+
+// =====================================================
+// CHANGE MANAGEMENT & VERSION CONTROL MODELS
+// =====================================================
+
+// Project Versions (Snapshot System)
+model ProjectVersion {
+  id                    String    @id @default(uuid())
+  projectId             String    @map("project_id")
+  versionNumber         String    @map("version_number")
+  versionName           String?   @map("version_name")
+  description           String?
+  majorVersion          Int       @default(1) @map("major_version")
+  minorVersion          Int       @default(0) @map("minor_version")
+  patchVersion          Int       @default(0) @map("patch_version")
+  isActive              Boolean   @default(true) @map("is_active")
+  isBaseline            Boolean   @default(false) @map("is_baseline")
+  processFlowSnapshot   Json?     @map("process_flow_snapshot")
+  fmeaSnapshot          Json?     @map("fmea_snapshot")
+  controlPlanSnapshot   Json?     @map("control_plan_snapshot")
+  createdById           String    @map("created_by_id")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  restoredFromVersionId String?   @map("restored_from_version_id")
+  totalProcessSteps     Int       @default(0) @map("total_process_steps")
+  totalFailureModes     Int       @default(0) @map("total_failure_modes")
+  totalControlItems     Int       @default(0) @map("total_control_items")
+  totalRpnScore         Decimal   @default(0) @map("total_rpn_score") @db.Decimal(10, 2)
+  highRiskItems         Int       @default(0) @map("high_risk_items")
+
+  // Relations
+  project               Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy             User              @relation("VersionCreator", fields: [createdById], references: [id])
+  restoredFromVersion   ProjectVersion?   @relation("VersionRestore", fields: [restoredFromVersionId], references: [id])
+  restoredVersions      ProjectVersion[]  @relation("VersionRestore")
+  changeEvents          ChangeEvent[]
+
+  @@unique([projectId, versionNumber])
+  @@map("project_versions")
+}
+
+// Change Events (Real-time change tracking)
+model ChangeEvent {
+  id                  String     @id @default(uuid())
+  projectId           String     @map("project_id")
+  versionId           String?    @map("version_id")
+  entityType          String     @map("entity_type")
+  entityId            String     @map("entity_id")
+  changeType          String     @map("change_type")
+  changeAction        String?    @map("change_action")
+  oldValues           Json?      @map("old_values")
+  newValues           Json?      @map("new_values")
+  changedFields       String[]   @map("changed_fields")
+  impactLevel         String     @default("MEDIUM") @map("impact_level")
+  affectedModules     String[]   @map("affected_modules")
+  propagationRequired Boolean    @default(false) @map("propagation_required")
+  propagationStatus   String     @default("PENDING") @map("propagation_status")
+  approvalRequired    Boolean    @default(false) @map("approval_required")
+  approvalStatus      String     @default("AUTO_APPROVED") @map("approval_status")
+  approvedById        String?    @map("approved_by_id")
+  approvedAt          DateTime?  @map("approved_at")
+  triggeredById       String     @map("triggered_by_id")
+  triggeredAt         DateTime   @default(now()) @map("triggered_at")
+  completedAt         DateTime?  @map("completed_at")
+  batchId             String?    @map("batch_id")
+  isBatchParent       Boolean    @default(false) @map("is_batch_parent")
+
+  // Relations
+  project            Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  version            ProjectVersion?      @relation(fields: [versionId], references: [id], onDelete: SetNull)
+  approvedBy         User?                @relation("ChangeApprover", fields: [approvedById], references: [id])
+  triggeredBy        User                 @relation("ChangeTriggerer", fields: [triggeredById], references: [id])
+  impactAnalysis     ChangeImpactAnalysis?
+  notifications      ChangeNotification[]
+  approvals          ChangeApproval[]
+
+  @@map("change_events")
+}
+
+// Change Impact Analysis
+model ChangeImpactAnalysis {
+  id                     String      @id @default(uuid())
+  changeEventId          String      @unique @map("change_event_id")
+  projectId              String      @map("project_id")
+  impactScore            Decimal?    @map("impact_score") @db.Decimal(5, 2)
+  riskLevel              String?     @map("risk_level")
+  affectedStakeholders   String[]    @map("affected_stakeholders")
+  estimatedEffortHours   Decimal?    @map("estimated_effort_hours") @db.Decimal(6, 2)
+  affectedProcessSteps   Json?       @map("affected_process_steps")
+  affectedFailureModes   Json?       @map("affected_failure_modes")
+  affectedControlItems   Json?       @map("affected_control_items")
+  dependentChanges       String[]    @map("dependent_changes")
+  prerequisiteChanges    String[]    @map("prerequisite_changes")
+  blockingIssues         String[]    @map("blocking_issues")
+  riskMitigationActions  String[]    @map("risk_mitigation_actions")
+  recommendedApprovers   String[]    @map("recommended_approvers")
+  testingRequirements    String[]    @map("testing_requirements")
+  analysisStatus         String      @default("PENDING") @map("analysis_status")
+  analysisStartedAt      DateTime?   @map("analysis_started_at")
+  analysisCompletedAt    DateTime?   @map("analysis_completed_at")
+  analyzedById           String?     @map("analyzed_by_id")
+  createdAt              DateTime    @default(now()) @map("created_at")
+
+  // Relations
+  changeEvent  ChangeEvent @relation(fields: [changeEventId], references: [id], onDelete: Cascade)
+  project      Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  analyzedBy   User?       @relation("ImpactAnalyzer", fields: [analyzedById], references: [id])
+
+  @@map("change_impact_analysis")
+}
+
+// Change Notifications
+model ChangeNotification {
+  id               String    @id @default(uuid())
+  changeEventId    String    @map("change_event_id")
+  projectId        String    @map("project_id")
+  notificationType String    @map("notification_type")
+  priority         String    @default("MEDIUM")
+  title            String
+  message          String?
+  recipientUserId  String?   @map("recipient_user_id")
+  recipientRole    String?   @map("recipient_role")
+  recipientDepartment String? @map("recipient_department")
+  deliveryMethod   String    @default("IN_APP") @map("delivery_method")
+  deliveryStatus   String    @default("PENDING") @map("delivery_status")
+  actionRequired   Boolean   @default(false) @map("action_required")
+  actionUrl        String?   @map("action_url")
+  actionDeadline   DateTime? @map("action_deadline")
+  isRead           Boolean   @default(false) @map("is_read")
+  readAt           DateTime? @map("read_at")
+  dismissedAt      DateTime? @map("dismissed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  sentAt           DateTime? @map("sent_at")
+  deliveredAt      DateTime? @map("delivered_at")
+
+  // Relations
+  changeEvent   ChangeEvent @relation(fields: [changeEventId], references: [id], onDelete: Cascade)
+  project       Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  recipientUser User?       @relation("NotificationRecipient", fields: [recipientUserId], references: [id])
+
+  @@map("change_notifications")
+}
+
+// Risk Analytics (Aggregated risk data)
+model RiskAnalytics {
+  id                          String   @id @default(uuid())
+  projectId                   String   @map("project_id")
+  analysisDate                DateTime @default(now()) @map("analysis_date") @db.Date
+  totalFailureModes           Int      @default(0) @map("total_failure_modes")
+  totalRpnScore               Decimal  @default(0) @map("total_rpn_score") @db.Decimal(10, 2)
+  averageRpn                  Decimal  @default(0) @map("average_rpn") @db.Decimal(6, 2)
+  highRiskItems               Int      @default(0) @map("high_risk_items")
+  criticalItems               Int      @default(0) @map("critical_items")
+  lowRiskCount                Int      @default(0) @map("low_risk_count")
+  mediumRiskCount             Int      @default(0) @map("medium_risk_count")
+  highRiskCount               Int      @default(0) @map("high_risk_count")
+  criticalRiskCount           Int      @default(0) @map("critical_risk_count")
+  totalPreventionControls     Int      @default(0) @map("total_prevention_controls")
+  totalDetectionControls      Int      @default(0) @map("total_detection_controls")
+  controlEffectivenessScore   Decimal  @default(0) @map("control_effectiveness_score") @db.Decimal(5, 2)
+  rpnTrend                    String?  @map("rpn_trend")
+  rpnChangePercentage         Decimal? @map("rpn_change_percentage") @db.Decimal(5, 2)
+  newRisksAdded               Int      @default(0) @map("new_risks_added")
+  risksMitigated              Int      @default(0) @map("risks_mitigated")
+  complianceScore             Decimal  @default(0) @map("compliance_score") @db.Decimal(5, 2)
+  missingControls             Int      @default(0) @map("missing_controls")
+  overdueActions              Int      @default(0) @map("overdue_actions")
+  incompleteItems             Int      @default(0) @map("incomplete_items")
+  processRiskBreakdown        Json?    @map("process_risk_breakdown")
+  failureModeCategories       Json?    @map("failure_mode_categories")
+  controlTypeDistribution     Json?    @map("control_type_distribution")
+  createdAt                   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, analysisDate])
+  @@map("risk_analytics")
+}
+
+// Change Approval Workflows
+model ChangeApprovalWorkflow {
+  id                    String    @id @default(uuid())
+  projectId             String    @map("project_id")
+  workflowName          String    @map("workflow_name")
+  description           String?
+  triggerConditions     Json?     @map("trigger_conditions")
+  approvalSteps         Json?     @map("approval_steps")
+  parallelApproval      Boolean   @default(false) @map("parallel_approval")
+  autoApproveConditions Json?     @map("auto_approve_conditions")
+  defaultTimeoutHours   Int       @default(48) @map("default_timeout_hours")
+  escalationRules       Json?     @map("escalation_rules")
+  emergencyBypassRoles  String[]  @map("emergency_bypass_roles")
+  isActive              Boolean   @default(true) @map("is_active")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  approvals ChangeApproval[]
+
+  @@map("change_approval_workflows")
+}
+
+// Change Approvals (Individual approval instances)
+model ChangeApproval {
+  id             String    @id @default(uuid())
+  changeEventId  String    @map("change_event_id")
+  workflowId     String    @map("workflow_id")
+  stepNumber     Int       @map("step_number")
+  stepName       String?   @map("step_name")
+  approverRole   String?   @map("approver_role")
+  approverUserId String?   @map("approver_user_id")
+  approvalStatus String    @default("PENDING") @map("approval_status")
+  decisionDate   DateTime? @map("decision_date")
+  comments       String?
+  assignedAt     DateTime  @default(now()) @map("assigned_at")
+  dueDate        DateTime? @map("due_date")
+  escalatedAt    DateTime? @map("escalated_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  changeEvent  ChangeEvent             @relation(fields: [changeEventId], references: [id], onDelete: Cascade)
+  workflow     ChangeApprovalWorkflow  @relation(fields: [workflowId], references: [id])
+  approverUser User?                   @relation("ApprovalUser", fields: [approverUserId], references: [id])
+
+  @@map("change_approvals")
+}
+
+// User Activity Tracking
+model UserActivityLog {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  projectId     String?   @map("project_id")
+  activityType  String    @map("activity_type")
+  entityType    String?   @map("entity_type")
+  entityId      String?   @map("entity_id")
+  description   String?
+  ipAddress     String?   @map("ip_address")
+  userAgent     String?   @map("user_agent")
+  sessionId     String?   @map("session_id")
+  requestPath   String?   @map("request_path")
+  requestMethod String?   @map("request_method")
+  durationMs    Int?      @map("duration_ms")
+  timestamp     DateTime  @default(now())
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("user_activity_logs")
+}
+
+// Compliance Reports
+model ComplianceReport {
+  id                      String    @id @default(uuid())
+  projectId               String    @map("project_id")
+  reportType              String    @map("report_type")
+  reportName              String    @map("report_name")
+  standardVersion         String?   @map("standard_version")
+  overallComplianceScore  Decimal?  @map("overall_compliance_score") @db.Decimal(5, 2)
+  complianceLevel         String?   @map("compliance_level")
+  requirementAssessments  Json?     @map("requirement_assessments")
+  nonConformances         Json?     @map("non_conformances")
+  recommendations         Json?     @map("recommendations")
+  evidenceItems           Json?     @map("evidence_items")
+  auditTrailSummary       Json?     @map("audit_trail_summary")
+  reportStatus            String    @default("DRAFT") @map("report_status")
+  generatedById           String    @map("generated_by_id")
+  reviewedById            String?   @map("reviewed_by_id")
+  approvedById            String?   @map("approved_by_id")
+  assessmentPeriodStart   DateTime? @map("assessment_period_start") @db.Date
+  assessmentPeriodEnd     DateTime? @map("assessment_period_end") @db.Date
+  generatedAt             DateTime  @default(now()) @map("generated_at")
+  reviewedAt              DateTime? @map("reviewed_at")
+  approvedAt              DateTime? @map("approved_at")
+  nextAssessmentDue       DateTime? @map("next_assessment_due") @db.Date
+
+  // Relations
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  generatedBy User    @relation("ReportGenerator", fields: [generatedById], references: [id])
+  reviewedBy  User?   @relation("ReportReviewer", fields: [reviewedById], references: [id])
+  approvedBy  User?   @relation("ReportApprover", fields: [approvedById], references: [id])
+
+  @@map("compliance_reports")
+}
+
+// Dashboard Configurations
+model DashboardConfiguration {
+  id                   String   @id @default(uuid())
+  userId               String   @map("user_id")
+  projectId            String?  @map("project_id")
+  dashboardName        String   @default("My Dashboard") @map("dashboard_name")
+  isDefault            Boolean  @default(false) @map("is_default")
+  isShared             Boolean  @default(false) @map("is_shared")
+  layoutConfig         Json     @map("layout_config")
+  refreshInterval      Int      @default(300) @map("refresh_interval")
+  defaultFilters       Json?    @map("default_filters")
+  dateRangePreference  String   @default("30_DAYS") @map("date_range_preference")
+  chartPreferences     Json?    @map("chart_preferences")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("dashboard_configurations")
+}
+
+// System Metrics
+model SystemMetrics {
+  id                               String   @id @default(uuid())
+  metricDate                       DateTime @default(now()) @map("metric_date") @db.Date
+  totalActiveProjects              Int      @default(0) @map("total_active_projects")
+  totalActiveUsers                 Int      @default(0) @map("total_active_users")
+  totalChangesToday                Int      @default(0) @map("total_changes_today")
+  totalRiskItems                   Int      @default(0) @map("total_risk_items")
+  averageResponseTimeMs            Decimal? @map("average_response_time_ms") @db.Decimal(8, 2)
+  changeProcessingTimeAvg          Decimal? @map("change_processing_time_avg") @db.Decimal(8, 2)
+  notificationDeliveryRate         Decimal? @map("notification_delivery_rate") @db.Decimal(5, 2)
+  systemAvailabilityPercentage     Decimal? @map("system_availability_percentage") @db.Decimal(5, 2)
+  errorRatePercentage              Decimal? @map("error_rate_percentage") @db.Decimal(5, 2)
+  userSatisfactionScore            Decimal? @map("user_satisfaction_score") @db.Decimal(3, 2)
+  riskReductionPercentage          Decimal? @map("risk_reduction_percentage") @db.Decimal(5, 2)
+  complianceImprovementPercentage  Decimal? @map("compliance_improvement_percentage") @db.Decimal(5, 2)
+  changeApprovalRate               Decimal? @map("change_approval_rate") @db.Decimal(5, 2)
+  createdAt                        DateTime @default(now()) @map("created_at")
+
+  @@unique([metricDate])
+  @@map("system_metrics")
+}

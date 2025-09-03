@@ -1,0 +1,452 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  password      String
+  role          Role     @default(USER)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastLoginAt   DateTime?
+  
+  // Relations
+  createdProjects     Project[]      @relation("ProjectCreator")
+  assignedProjects    ProjectMember[]
+  createdFmeas        Fmea[]         @relation("FmeaCreator")
+  assignedActions     ActionItem[]   @relation("ActionAssignee") 
+  createdActions      ActionItem[]   @relation("ActionCreator")
+  comments            Comment[]
+  notifications       Notification[]
+  changeEvents        ChangeEvent[]  @relation("ChangeCreator")
+  complianceReports   ComplianceReport[]
+  auditTrail          AuditTrail[]
+
+  @@map("users")
+}
+
+model Project {
+  id            String        @id @default(cuid())
+  name          String
+  description   String?
+  department    String?
+  industry      Industry      @default(AUTOMOTIVE)
+  status        ProjectStatus @default(ACTIVE)
+  version       String        @default("1.0")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  archivedAt    DateTime?
+
+  // Relations  
+  createdById       String
+  createdBy         User            @relation("ProjectCreator", fields: [createdById], references: [id])
+  members           ProjectMember[]
+  processFlows      ProcessFlow[]
+  fmeas             Fmea[]
+  controlPlans      ControlPlan[]
+  actionItems       ActionItem[]
+  comments          Comment[]
+  notifications     Notification[]
+  changeEvents      ChangeEvent[]
+  complianceReports ComplianceReport[]
+  riskAnalytics     RiskAnalytics[]
+
+  @@map("projects")
+}
+
+model ProcessFlow {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  sequence    Int
+  input       String?
+  output      String?
+  resources   String?
+  controls    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  projectId   String
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  processes   Process[]
+  fmeas       Fmea[]
+
+  @@map("process_flows")
+}
+
+model Process {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  sequence        Int
+  processType     String?
+  input           String?
+  output          String?
+  resources       String?
+  controls        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  processFlowId   String
+  processFlow     ProcessFlow   @relation(fields: [processFlowId], references: [id], onDelete: Cascade)
+  failureModes    FailureMode[]
+  
+  @@map("processes")
+}
+
+model Fmea {
+  id              String     @id @default(cuid())
+  name            String
+  description     String?
+  fmeaType        FmeaType   @default(PROCESS)
+  status          FmeaStatus @default(DRAFT)
+  version         String     @default("1.0")
+  approvalDate    DateTime?
+  nextReviewDate  DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  // Relations
+  projectId       String
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  processFlowId   String?
+  processFlow     ProcessFlow?  @relation(fields: [processFlowId], references: [id])
+  createdById     String
+  createdBy       User          @relation("FmeaCreator", fields: [createdById], references: [id])
+  failureModes    FailureMode[]
+  controlPlans    ControlPlan[]
+  comments        Comment[]
+  riskAnalytics   RiskAnalytics[]
+
+  @@map("fmeas")
+}
+
+model FailureMode {
+  id                  String   @id @default(cuid())
+  name                String
+  description         String?
+  potential_failure   String
+  potential_effects   String
+  severity            Int      @default(1)
+  potential_causes    String
+  occurrence          Int      @default(1)
+  current_controls    String?
+  detection           Int      @default(1)
+  rpn                 Int      @default(1)
+  recommended_actions String?
+  responsibility      String?
+  target_date         DateTime?
+  actions_taken       String?
+  revised_severity    Int?
+  revised_occurrence  Int?
+  revised_detection   Int?
+  revised_rpn         Int?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  // Relations
+  fmeaId      String
+  fmea        Fmea        @relation(fields: [fmeaId], references: [id], onDelete: Cascade)
+  processId   String?
+  process     Process?    @relation(fields: [processId], references: [id])
+  actionItems ActionItem[]
+  comments    Comment[]
+
+  @@map("failure_modes")
+}
+
+model ControlPlan {
+  id                String   @id @default(cuid())
+  name              String
+  description       String?
+  process_step      String
+  control_method    String
+  specification     String?
+  measurement_technique String?
+  sample_size       String?
+  frequency         String?
+  control_method_type ControlMethodType @default(PREVENTION)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  projectId   String
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fmeaId      String?
+  fmea        Fmea?   @relation(fields: [fmeaId], references: [id])
+
+  @@map("control_plans")
+}
+
+model ActionItem {
+  id            String           @id @default(cuid())
+  title         String
+  description   String?
+  priority      Priority         @default(MEDIUM)
+  status        ActionStatus     @default(OPEN)
+  dueDate       DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  // Relations
+  projectId       String
+  project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  failureModeId   String?
+  failureMode     FailureMode? @relation(fields: [failureModeId], references: [id])
+  assigneeId      String?
+  assignee        User?        @relation("ActionAssignee", fields: [assigneeId], references: [id])
+  createdById     String
+  createdBy       User         @relation("ActionCreator", fields: [createdById], references: [id])
+  comments        Comment[]
+  notifications   Notification[]
+
+  @@map("action_items")
+}
+
+model Comment {
+  id        String      @id @default(cuid())
+  content   String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  
+  // Relations
+  authorId        String
+  author          User          @relation(fields: [authorId], references: [id])
+  projectId       String?
+  project         Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fmeaId          String?
+  fmea            Fmea?         @relation(fields: [fmeaId], references: [id], onDelete: Cascade)
+  failureModeId   String?
+  failureMode     FailureMode?  @relation(fields: [failureModeId], references: [id], onDelete: Cascade)
+  actionItemId    String?
+  actionItem      ActionItem?   @relation(fields: [actionItemId], references: [id], onDelete: Cascade)
+  parentId        String?
+  parent          Comment?      @relation("CommentReplies", fields: [parentId], references: [id])
+  replies         Comment[]     @relation("CommentReplies")
+
+  @@map("comments")
+}
+
+model Notification {
+  id        String             @id @default(cuid())
+  title     String
+  message   String
+  type      NotificationType   @default(INFO)
+  read      Boolean            @default(false)
+  createdAt DateTime           @default(now())
+
+  // Relations
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId     String?
+  project       Project?    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actionItemId  String?
+  actionItem    ActionItem? @relation(fields: [actionItemId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model ChangeEvent {
+  id            String      @id @default(cuid())
+  entityType    String
+  entityId      String
+  changeType    ChangeType
+  oldValues     Json?
+  newValues     Json?
+  description   String?
+  reason        String?
+  createdAt     DateTime    @default(now())
+
+  // Relations
+  createdById   String
+  createdBy     User      @relation("ChangeCreator", fields: [createdById], references: [id])
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("change_events")
+}
+
+model ComplianceReport {
+  id              String            @id @default(cuid())
+  standard        ComplianceStandard
+  status          ComplianceStatus  @default(PENDING)
+  score           Float?
+  findings        Json?
+  recommendations Json?
+  assessedAt      DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  // Relations  
+  projectId     String
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assessedById  String?
+  assessedBy    User?   @relation(fields: [assessedById], references: [id])
+
+  @@map("compliance_reports")
+}
+
+model RiskAnalytics {
+  id            String   @id @default(cuid())
+  period        DateTime
+  totalRpn      Int
+  avgSeverity   Float
+  avgOccurrence Float
+  avgDetection  Float
+  highRiskCount Int
+  trendData     Json?
+  createdAt     DateTime @default(now())
+
+  // Relations
+  projectId     String
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fmeaId        String?
+  fmea          Fmea?   @relation(fields: [fmeaId], references: [id])
+
+  @@map("risk_analytics")
+}
+
+model AuditTrail {
+  id          String   @id @default(cuid())
+  action      String
+  entityType  String
+  entityId    String
+  oldValues   Json?
+  newValues   Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  // Relations
+  userId      String
+  user        User   @relation(fields: [userId], references: [id])
+
+  @@map("audit_trail")
+}
+
+model ProjectMember {
+  id        String      @id @default(cuid())
+  role      ProjectRole @default(MEMBER)
+  joinedAt  DateTime    @default(now())
+
+  // Relations
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  @@map("project_members")
+}
+
+// Enums
+enum Role {
+  ADMIN
+  MANAGER
+  USER
+  VIEWER
+}
+
+enum ProjectStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+  ON_HOLD
+}
+
+enum ProjectRole {
+  OWNER
+  MANAGER
+  MEMBER
+  VIEWER
+}
+
+enum Industry {
+  AUTOMOTIVE
+  AEROSPACE
+  MEDICAL
+  MANUFACTURING
+  OTHER
+}
+
+enum FmeaType {
+  PROCESS
+  DESIGN
+  SYSTEM
+  SERVICE
+}
+
+enum FmeaStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  ARCHIVED
+}
+
+enum ControlMethodType {
+  PREVENTION
+  DETECTION
+  REACTION
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ActionStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  ON_HOLD
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  REMINDER
+}
+
+enum ChangeType {
+  CREATE
+  UPDATE
+  DELETE
+  ARCHIVE
+  RESTORE
+}
+
+enum ComplianceStandard {
+  IATF_16949
+  ISO_9001
+  AS9100
+  ISO_13485
+  CUSTOM
+}
+
+enum ComplianceStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLIANT
+  NON_COMPLIANT
+  NEEDS_REVIEW
+}
