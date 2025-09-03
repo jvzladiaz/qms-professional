@@ -1,9 +1,20 @@
 {
-  "buildCommand": "cd packages/frontend && npm install && npm run build",
+  "buildCommand": "node build-vercel.js",
   "outputDirectory": "packages/frontend/dist",
+  "installCommand": "npm install",
   "functions": {
     "api/**/*.ts": {
       "runtime": "@vercel/node"
     }
-  }
+  },
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/$1"
+    }
+  ]
 }
