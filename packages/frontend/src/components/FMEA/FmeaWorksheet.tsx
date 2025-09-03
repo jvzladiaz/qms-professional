@@ -34,7 +34,7 @@ import {
   Warning as WarningIcon,
   CheckCircle as CheckIcon,
   Error as ErrorIcon,
-  Assignment as ActionIcon,
+  Task as ActionIcon,
   Calculate as CalculateIcon,
   ImportExport as ImportIcon,
   GetApp as ExportIcon,
@@ -469,7 +469,7 @@ const FmeaWorksheet = ({ fmea, onFmeaUpdate, readOnly = false }: FmeaWorksheetPr
     {
       title: 'Total Failure Modes',
       value: metrics?.totalFailureModes || 0,
-      icon: <Assignment />,
+      icon: <ActionIcon />,
       color: 'primary.main'
     },
     {

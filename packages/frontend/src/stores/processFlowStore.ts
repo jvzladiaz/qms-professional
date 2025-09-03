@@ -173,7 +173,7 @@ const useProcessFlowStore = create<ProcessFlowStore>((set, get) => ({
           y: event.clientY - 100, // Offset for header
         })
         
-        get().addNode(selectedTool as ProcessStepType, position)
+        get().addNode(selectedTool as any, position)
       }
     }
   },

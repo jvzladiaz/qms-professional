@@ -265,7 +265,7 @@ const ProcessFlowEditorInternal = ({
       >
         {/* Background Grid */}
         <Background
-          variant="dots"
+          variant={1 as any}
           gap={20}
           size={2}
           color={theme.palette.divider}

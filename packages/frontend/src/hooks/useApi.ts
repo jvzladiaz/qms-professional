@@ -35,7 +35,7 @@ export function useApi<T>(
       return response.data
     } catch (err) {
       const error = err as AxiosError
-      const errorMessage = error.response?.data?.message || error.message || 'An error occurred'
+      const errorMessage = (error.response?.data as any)?.message || error.message || 'An error occurred'
       setState({
         data: null,
         loading: false,

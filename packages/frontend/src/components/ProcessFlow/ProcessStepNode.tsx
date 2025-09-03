@@ -117,7 +117,7 @@ const TimeIndicator = styled(Box)(({ theme }) => ({
 }))
 
 interface ProcessStepNodeProps extends NodeProps<ProcessStepNodeData> {
-  selected?: boolean
+  selected: boolean
 }
 
 const ProcessStepNode = memo(({ data, selected }: ProcessStepNodeProps) => {
